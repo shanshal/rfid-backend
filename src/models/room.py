@@ -12,7 +12,3 @@ class Room(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(default=None)
-
-    # TODO: Instruments reference rooms as their current location.
-    # TODO: A room can be linked to many devices.
-    # TODO: Movement requirements are enforced through transition rules and event logs.
