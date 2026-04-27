@@ -1,7 +1,24 @@
-from fastapi import FastAPI
-from src.api.routes.health import router as health_router
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+from fastapi import FastAPI
+
+from src.api.routes.health import router as health_router
+from src.api.routes.instruments import router as instruments_router
+from src.api.routes.movements import router as movements_router
+from src.api.routes.procedures import router as procedures_router
+from src.api.routes.rooms import router as rooms_router
+from src.api.routes.devices import router as devices_router
+from src.api.routes.diagnostics import router as diagnostics_router
+from src.mqtt.lifespan import mqtt_lifespan
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with mqtt_lifespan():
+        yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/")
@@ -13,4 +30,9 @@ def root():
     }
 
 app.include_router(health_router)
-
+app.include_router(instruments_router)
+app.include_router(rooms_router)
+app.include_router(procedures_router)
+app.include_router(movements_router)
+app.include_router(devices_router)
+app.include_router(diagnostics_router)

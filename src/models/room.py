@@ -12,3 +12,4 @@ class Room(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(default=None)
+    deleted_by: Mapped[str | None] = mapped_column(String(100), default=None)

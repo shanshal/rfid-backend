@@ -16,3 +16,4 @@ class Instrument(Base):
     current_room: Mapped[int] = mapped_column(ForeignKey("rooms.id"), index=True)
     status: Mapped[str] = mapped_column(String(50), default=InstrumentStatus.AVAILABLE, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(default=None)
+    deleted_by: Mapped[str | None] = mapped_column(String(100), default=None)

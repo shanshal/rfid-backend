@@ -1,0 +1,7 @@
+user scanner
+topic write scanners/+/scan
+topic write scanners/+/status
+
+user backend
+topic read scanners/+/scan
+topic read scanners/+/status
