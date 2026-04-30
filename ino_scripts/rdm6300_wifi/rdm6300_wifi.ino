@@ -37,7 +37,7 @@ struct FeedbackEngine;
 static const char* PROVISION_AP_SSID = "RDM6300-Setup";
 static const char* PROVISION_AP_PASSWORD = "admin1234";
 
-static const char* DEFAULT_MQTT_BROKER = "192.168.10.188";
+static const char* DEFAULT_MQTT_BROKER = "159.195.41.12";
 static const uint16_t DEFAULT_MQTT_PORT = 1883;
 static const char* DEFAULT_MQTT_USERNAME = "scanner";
 static const char* DEFAULT_MQTT_PASSWORD = "10203040";
