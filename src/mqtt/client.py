@@ -7,8 +7,8 @@ from cachetools import TTLCache
 from pydantic import ValidationError
 
 from src.mqtt.config import MqttSettings
-from src.mqtt.handlers import handle_scan, handle_status
-from src.mqtt.schemas import ScanEvent, StatusEvent
+from src.mqtt.handlers import handle_announce, handle_scan, handle_status
+from src.mqtt.schemas import AnnounceEvent, ScanEvent, StatusEvent
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,13 @@ async def run_consumer(settings: MqttSettings, stop: asyncio.Event) -> None:
                 log.info("MQTT consumer connected to %s:%s", settings.host, settings.port)
                 await client.subscribe(settings.scan_topic, qos=1)
                 await client.subscribe(settings.status_topic, qos=1)
-                log.info("subscribed to %s and %s", settings.scan_topic, settings.status_topic)
+                await client.subscribe(settings.announce_topic, qos=1)
+                log.info(
+                    "subscribed to %s, %s, and %s",
+                    settings.scan_topic,
+                    settings.status_topic,
+                    settings.announce_topic,
+                )
 
                 async for message in client.messages:
                     await _dispatch(message, seen_event_ids)
@@ -69,6 +75,9 @@ async def _dispatch(message: "aiomqtt.Message", seen_event_ids: TTLCache) -> Non
         elif topic.endswith("/status"):
             event = StatusEvent.model_validate_json(raw)
             await asyncio.to_thread(handle_status, event)
+        elif topic.endswith("/announce"):
+            event = AnnounceEvent.model_validate_json(raw)
+            await asyncio.to_thread(handle_announce, event)
         else:
             log.debug("unhandled topic %s", topic)
     except ValidationError as err:

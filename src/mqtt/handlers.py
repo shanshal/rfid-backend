@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from src.db.session import SessionLocal
 from src.models.instrument import Instrument
 from src.models.mqtt_scan_trace import MqttScanTrace
-from src.mqtt.schemas import ScanEvent, StatusEvent
+from src.mqtt.schemas import AnnounceEvent, ScanEvent, StatusEvent
 from src.services.device_service import get_or_create_pending_device
 from src.services.audit_service import write_audit_event
 from src.services.errors import DomainError
@@ -94,6 +94,7 @@ def handle_scan(
         device, created = get_or_create_pending_device(db, event.device_mac)
         if created:
             log.info("discovered new scanner mac=%s as pending device_id=%s", event.device_mac, device.id)
+        device.last_activity_at = datetime.now(timezone.utc)
 
         if device.room_id is None:
             log.warning("scan from unassigned device mac=%s", event.device_mac)
@@ -192,6 +193,34 @@ def handle_status(event: StatusEvent) -> None:
         if created:
             log.info("discovered new scanner mac=%s from status", event.device_mac)
         device.last_activity_at = datetime.now(timezone.utc)
+        device.last_status = event.status
+        if event.firmware:
+            device.firmware = event.firmware
+        db.commit()
+    finally:
+        db.close()
+
+
+def handle_announce(event: AnnounceEvent) -> None:
+    db: Session = SessionLocal()
+    try:
+        device, created = get_or_create_pending_device(db, event.device_mac)
+        if created:
+            log.info("discovered new scanner mac=%s from announce", event.device_mac)
+
+        device.last_activity_at = datetime.now(timezone.utc)
+        if event.local_ip is not None:
+            device.local_ip = event.local_ip
+        if event.scan_topic is not None:
+            device.scan_topic = event.scan_topic
+        if event.status_topic is not None:
+            device.status_topic = event.status_topic
+        if event.mqtt_host is not None:
+            device.mqtt_host = event.mqtt_host
+        if event.mqtt_port is not None:
+            device.mqtt_port = event.mqtt_port
+        if event.firmware is not None:
+            device.firmware = event.firmware
         db.commit()
     finally:
         db.close()

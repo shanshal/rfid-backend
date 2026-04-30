@@ -33,6 +33,41 @@ def get_or_create_pending_device(db: Session, mac_address: str) -> tuple[Device,
     return device, True
 
 
+def register_device(
+    db: Session,
+    mac_address: str,
+    actor: str,
+    name: str | None = None,
+    room_id: int | None = None,
+) -> Device:
+    device, created = get_or_create_pending_device(db, mac_address)
+
+    if name:
+        device.name = name
+
+    if room_id is not None:
+        room = db.query(Room).filter(Room.id == room_id, Room.deleted_at.is_(None)).first()
+        if not room:
+            raise NotFoundError(f"Room {room_id} not found")
+        device.room_id = room_id
+
+    db.flush()
+
+    write_audit_event(
+        db,
+        event_type="device_registered" if created else "device_updated",
+        actor=actor,
+        payload={
+            "device_id": device.id,
+            "mac_address": device.mac_address,
+            "room_id": device.room_id,
+            "name": device.name,
+        },
+    )
+    db.commit()
+    return device
+
+
 def list_devices(db: Session) -> list[Device]:
     return db.query(Device).order_by(Device.id.desc()).all()
 

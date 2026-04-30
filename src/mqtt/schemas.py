@@ -18,3 +18,14 @@ class StatusEvent(BaseModel):
     rssi: int | None = None
     firmware: str | None = None
     at: datetime | None = None
+
+
+class AnnounceEvent(BaseModel):
+    device_mac: str = Field(min_length=1, max_length=64)
+    local_ip: str | None = Field(default=None, max_length=64)
+    scan_topic: str | None = Field(default=None, max_length=255)
+    status_topic: str | None = Field(default=None, max_length=255)
+    mqtt_host: str | None = Field(default=None, max_length=255)
+    mqtt_port: int | None = None
+    firmware: str | None = Field(default=None, max_length=100)
+    at: datetime | None = None

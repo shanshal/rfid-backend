@@ -32,9 +32,9 @@ scripts/stack-down.sh
 
 The root `docker-compose.yml` starts both Mosquitto and the FastAPI backend.
 
-Set the scanner's MQTT credentials in the ESP32 setup portal to match the `scanner`
+Set scanner credentials in the ESP32 setup portal to match the `scanner`
 user in `mqtt/passwords`, and set `BACKEND_MQTT_PASSWORD` to match the `backend`
-user password.
+user password. The provided defaults are `10203040` for both users.
 
 Broker listens on `tcp://<host>:1883`.
 
@@ -42,6 +42,7 @@ Broker listens on `tcp://<host>:1883`.
 
 - `scanners/{mac}/scan` — published by scanner per tag read (QoS 1).
 - `scanners/{mac}/status` — boot, heartbeat, LWT (QoS 1, retained).
+- `scanners/{mac}/announce` — broker/topic/IP metadata for discovery (QoS 1, retained).
 
 `{mac}` is the full uppercase MAC with colons, e.g. `AA:BB:CC:DD:EE:FF`.
 

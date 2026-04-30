@@ -10,35 +10,14 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set +a
 fi
 
+BACKEND_MQTT_PASSWORD="${BACKEND_MQTT_PASSWORD:-10203040}"
+SCANNER_MQTT_PASSWORD="${SCANNER_MQTT_PASSWORD:-10203040}"
+export BACKEND_MQTT_PASSWORD
+export SCANNER_MQTT_PASSWORD
+
 if [[ ! -f "${ROOT_DIR}/mqtt/passwords" ]]; then
-  cat <<'EOF'
-Missing mqtt/passwords file.
-
-Create broker users first (from repo root):
-
-  cp mqtt/passwords.example mqtt/passwords
-  docker run --rm -v "$PWD/mqtt":/work eclipse-mosquitto:2 mosquitto_passwd -c /work/passwords scanner
-  docker run --rm -v "$PWD/mqtt":/work eclipse-mosquitto:2 mosquitto_passwd /work/passwords backend
-
-Then set backend MQTT password in .env:
-
-  cp .env.example .env
-  # edit BACKEND_MQTT_PASSWORD in .env
-EOF
-  exit 1
-fi
-
-if [[ -z "${BACKEND_MQTT_PASSWORD:-}" ]]; then
-  cat <<'EOF'
-BACKEND_MQTT_PASSWORD is not set.
-
-Set it in .env (recommended) or your shell environment.
-Example:
-
-  cp .env.example .env
-  # edit BACKEND_MQTT_PASSWORD in .env
-EOF
-  exit 1
+  docker run --rm -v "${ROOT_DIR}/mqtt":/work eclipse-mosquitto:2 \
+    sh -c "mosquitto_passwd -b -c /work/passwords scanner \"${SCANNER_MQTT_PASSWORD}\" && mosquitto_passwd -b /work/passwords backend \"${BACKEND_MQTT_PASSWORD}\""
 fi
 
 docker compose -f "${ROOT_DIR}/docker-compose.yml" up -d

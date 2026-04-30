@@ -16,18 +16,44 @@ services:
     container_name: rfid-backend
     restart: unless-stopped
     working_dir: /app
-    command: sh -c "pip install --no-cache-dir -r requirements.txt && uvicorn src.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "pip install --no-cache-dir -r requirements.txt && alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"
     depends_on:
       - mosquitto
     environment:
       MQTT_BROKER_HOST: mosquitto
       MQTT_BROKER_PORT: "1883"
       MQTT_USERNAME: backend
-      MQTT_PASSWORD: ${BACKEND_MQTT_PASSWORD:-}
+      MQTT_PASSWORD: ${BACKEND_MQTT_PASSWORD:-10203040}
     ports:
       - "8000:8000"
     volumes:
       - ./:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rfid-frontend-legacy
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://backend:8000
+    ports:
+      - "5174:5173"
+
+  mobile-frontend:
+    build:
+      context: ./mobile_frontend
+      dockerfile: Dockerfile
+    container_name: rfid-mobile-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://backend:8000
+    ports:
+      - "5173:5173"
 
 volumes:
   mosquitto-data:

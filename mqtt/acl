@@ -1,7 +1,9 @@
 user scanner
 topic write scanners/+/scan
 topic write scanners/+/status
+topic write scanners/+/announce
 
 user backend
 topic read scanners/+/scan
 topic read scanners/+/status
+topic read scanners/+/announce

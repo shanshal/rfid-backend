@@ -45,6 +45,7 @@ static const char* DEFAULT_MQTT_PASSWORD = "10203040";
 static const char* MQTT_TOPIC_PREFIX = "scanners/";
 static const char* MQTT_TOPIC_SCAN_SUFFIX = "/scan";
 static const char* MQTT_TOPIC_STATUS_SUFFIX = "/status";
+static const char* MQTT_TOPIC_ANNOUNCE_SUFFIX = "/announce";
 
 static const char* FIRMWARE_VERSION = "rdm6300-wifi-1.0";
 static const char* NTP_SERVER = "pool.ntp.org";
@@ -312,6 +313,7 @@ RuntimeConfig runtimeConfig;
 String deviceMac;
 String scanTopic;
 String statusTopic;
+String announceTopic;
 String lwtPayload;
 String portalCustomMenuHtml;
 
@@ -525,6 +527,7 @@ void buildPortalCustomHtml() {
     html += "<div class='rdm-kv'><span>Broker</span>" + runtimeConfig.mqttBroker + ":" + String(runtimeConfig.mqttPort) + "</div>";
     html += "<div class='rdm-kv'><span>MQTT user</span>" + runtimeConfig.mqttUsername + "</div>";
     html += "<div class='rdm-kv'><span>Topic</span>" + scanTopic + "</div>";
+    html += "<div class='rdm-kv'><span>Announce</span>" + announceTopic + "</div>";
     html += "</div>";
 
     portalCustomMenuHtml = html;
@@ -562,6 +565,7 @@ bool runProvisioningPortal(bool forcePortal) {
         deviceMac.toUpperCase();
     }
     scanTopic = String(MQTT_TOPIC_PREFIX) + deviceMac + MQTT_TOPIC_SCAN_SUFFIX;
+    announceTopic = String(MQTT_TOPIC_PREFIX) + deviceMac + MQTT_TOPIC_ANNOUNCE_SUFFIX;
     buildPortalCustomHtml();
     wm.setCustomMenuHTML(portalCustomMenuHtml.c_str());
 
@@ -657,11 +661,13 @@ void initDeviceIdentity() {
     deviceMac.toUpperCase();
     scanTopic = String(MQTT_TOPIC_PREFIX) + deviceMac + MQTT_TOPIC_SCAN_SUFFIX;
     statusTopic = String(MQTT_TOPIC_PREFIX) + deviceMac + MQTT_TOPIC_STATUS_SUFFIX;
+    announceTopic = String(MQTT_TOPIC_PREFIX) + deviceMac + MQTT_TOPIC_ANNOUNCE_SUFFIX;
 
     char will[128];
     snprintf(will, sizeof(will), "{\"device_mac\":\"%s\",\"status\":\"offline\"}", deviceMac.c_str());
     lwtPayload = String(will);
-    dbgf("MAC=%s scan=%s status=%s", deviceMac.c_str(), scanTopic.c_str(), statusTopic.c_str());
+    dbgf("MAC=%s scan=%s status=%s announce=%s",
+         deviceMac.c_str(), scanTopic.c_str(), statusTopic.c_str(), announceTopic.c_str());
 }
 
 void syncTime() {
@@ -703,6 +709,37 @@ bool publishStatus(const char* status) {
     return mqttClient.publish(statusTopic.c_str(), payload, true);
 }
 
+bool publishAnnounce() {
+    char ts[32];
+    bool have_ts = getIsoTimestamp(ts, sizeof(ts));
+    char payload[512];
+    if (have_ts) {
+        snprintf(payload, sizeof(payload),
+            "{\"device_mac\":\"%s\",\"local_ip\":\"%s\",\"scan_topic\":\"%s\",\"status_topic\":\"%s\",\"mqtt_host\":\"%s\",\"mqtt_port\":%u,\"firmware\":\"%s\",\"at\":\"%s\"}",
+            deviceMac.c_str(),
+            WiFi.localIP().toString().c_str(),
+            scanTopic.c_str(),
+            statusTopic.c_str(),
+            runtimeConfig.mqttBroker.c_str(),
+            runtimeConfig.mqttPort,
+            FIRMWARE_VERSION,
+            ts);
+    } else {
+        snprintf(payload, sizeof(payload),
+            "{\"device_mac\":\"%s\",\"local_ip\":\"%s\",\"scan_topic\":\"%s\",\"status_topic\":\"%s\",\"mqtt_host\":\"%s\",\"mqtt_port\":%u,\"firmware\":\"%s\",\"at\":null}",
+            deviceMac.c_str(),
+            WiFi.localIP().toString().c_str(),
+            scanTopic.c_str(),
+            statusTopic.c_str(),
+            runtimeConfig.mqttBroker.c_str(),
+            runtimeConfig.mqttPort,
+            FIRMWARE_VERSION);
+    }
+    bool ok = mqttClient.publish(announceTopic.c_str(), payload, true);
+    dbgf("Announce publish %s: %s", ok ? "ok" : "failed", payload);
+    return ok;
+}
+
 bool publishScan(const char* uid) {
     char ts[32];
     bool have_ts = getIsoTimestamp(ts, sizeof(ts));
@@ -739,6 +776,7 @@ bool connectMQTT() {
         if (connected) {
             Serial.println("connected");
             publishStatus("online");
+            publishAnnounce();
             lastHeartbeatMs = millis();
             return true;
         }
@@ -761,6 +799,7 @@ void publishHeartbeatIfDue() {
     if (now - lastHeartbeatMs < HEARTBEAT_INTERVAL_MS) return;
     lastHeartbeatMs = now;
     publishStatus("alive");
+    publishAnnounce();
 }
 
 // ---------------- Mode transitions ----------------

@@ -25,3 +25,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend workspaces
+mobile_frontend/node_modules/
+mobile_frontend/dist/

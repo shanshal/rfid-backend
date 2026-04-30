@@ -10,6 +10,7 @@ class MqttSettings:
     password: str | None
     scan_topic: str = "scanners/+/scan"
     status_topic: str = "scanners/+/status"
+    announce_topic: str = "scanners/+/announce"
     client_id: str = "rfid-backend"
     dedupe_ttl_seconds: int = 300
     dedupe_max_entries: int = 10000
