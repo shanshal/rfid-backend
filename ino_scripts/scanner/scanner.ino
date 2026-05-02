@@ -72,9 +72,15 @@ static const uint8_t PIN_MOTOR = 26;
 static const uint8_t PIN_BTN1 = 25;
 static const uint8_t PIN_SWITCH = 14;
 
+static const bool LED_ACTIVE_HIGH = true;
+static const bool BUZZER_ACTIVE_HIGH = true;
+static const bool MOTOR_ACTIVE_HIGH = true;
+static const uint8_t MOTOR_PWM_CHANNEL = 0;
+static const uint16_t MOTOR_PWM_FREQ = 5000;
+static const uint8_t MOTOR_PWM_BITS = 8;
+
 // ---------------- Timing ----------------
 
-static const unsigned long DEBOUNCE_MS = 50;
 static const unsigned long SCAN_WINDOW_MS = 1500;
 static const unsigned long FEEDBACK_PRE_DELAY_MS = 500;
 
@@ -306,6 +312,7 @@ struct RuntimeConfig {
     uint16_t mqttPort;
     String mqttUsername;
     String mqttPassword;
+    bool mqttCustomTargetEnabled;
 };
 
 RuntimeConfig runtimeConfig;
@@ -324,10 +331,6 @@ uint32_t scanCounter = 0;
 bool scanArmed = false;
 unsigned long scanWindowUntilMs = 0;
 
-bool lastRawBtn = LOW;
-bool debouncedBtn = LOW;
-unsigned long lastBtnChangeMs = 0;
-
 // ---------------- Logging helpers ----------------
 
 void dbgf(const char* fmt, ...) {
@@ -342,39 +345,25 @@ void dbgf(const char* fmt, ...) {
 // ---------------- Output helpers ----------------
 
 void writeLeds(bool l1, bool l2, bool l3) {
-    digitalWrite(PIN_LED1, l1 ? HIGH : LOW);
-    digitalWrite(PIN_LED2, l2 ? HIGH : LOW);
-    digitalWrite(PIN_LED3, l3 ? HIGH : LOW);
+    digitalWrite(PIN_LED1, (l1 == LED_ACTIVE_HIGH) ? HIGH : LOW);
+    digitalWrite(PIN_LED2, (l2 == LED_ACTIVE_HIGH) ? HIGH : LOW);
+    digitalWrite(PIN_LED3, (l3 == LED_ACTIVE_HIGH) ? HIGH : LOW);
 }
 
 void writeBuzzer(bool on) {
-    digitalWrite(PIN_BUZZER, on ? HIGH : LOW);
+    digitalWrite(PIN_BUZZER, (on == BUZZER_ACTIVE_HIGH) ? HIGH : LOW);
 }
 
 void writeMotor(uint8_t pwm) {
-    analogWrite(PIN_MOTOR, pwm);
+    uint8_t duty = pwm;
+    if (!MOTOR_ACTIVE_HIGH) duty = 255 - duty;
+    ledcWrite(MOTOR_PWM_CHANNEL, duty);
 }
 
 void allOutputsOff() {
     writeLeds(false, false, false);
     writeBuzzer(false);
     writeMotor(0);
-}
-
-// ---------------- Button ----------------
-
-bool consumeButtonPress() {
-    const bool raw = digitalRead(PIN_BTN1);
-    if (raw != lastRawBtn) {
-        lastBtnChangeMs = millis();
-    }
-    lastRawBtn = raw;
-    if ((millis() - lastBtnChangeMs) <= DEBOUNCE_MS) return false;
-    if (raw != debouncedBtn) {
-        debouncedBtn = raw;
-        if (raw == HIGH) return true;
-    }
-    return false;
 }
 
 // ---------------- Output update loop ----------------
@@ -429,8 +418,13 @@ bool parsePort(const String& raw, uint16_t& outPort) {
 
 void loadRuntimeConfig() {
     preferences.begin("rfid_cfg", true);
-    runtimeConfig.mqttBroker = preferences.getString("mqtt_host", DEFAULT_MQTT_BROKER);
-    runtimeConfig.mqttPort = preferences.getUShort("mqtt_port", DEFAULT_MQTT_PORT);
+    runtimeConfig.mqttCustomTargetEnabled = preferences.getBool("mqtt_custom", false);
+    runtimeConfig.mqttBroker = DEFAULT_MQTT_BROKER;
+    runtimeConfig.mqttPort = DEFAULT_MQTT_PORT;
+    if (runtimeConfig.mqttCustomTargetEnabled) {
+        runtimeConfig.mqttBroker = preferences.getString("mqtt_host", DEFAULT_MQTT_BROKER);
+        runtimeConfig.mqttPort = preferences.getUShort("mqtt_port", DEFAULT_MQTT_PORT);
+    }
     runtimeConfig.mqttUsername = preferences.getString("mqtt_user", DEFAULT_MQTT_USERNAME);
     runtimeConfig.mqttPassword = preferences.getString("mqtt_pass", DEFAULT_MQTT_PASSWORD);
     preferences.end();
@@ -438,6 +432,7 @@ void loadRuntimeConfig() {
 
 void saveRuntimeConfig(const RuntimeConfig& cfg) {
     preferences.begin("rfid_cfg", false);
+    preferences.putBool("mqtt_custom", cfg.mqttCustomTargetEnabled);
     preferences.putString("mqtt_host", cfg.mqttBroker);
     preferences.putUShort("mqtt_port", cfg.mqttPort);
     preferences.putString("mqtt_user", cfg.mqttUsername);
@@ -595,6 +590,9 @@ bool runProvisioningPortal(bool forcePortal) {
         Serial.println("Invalid MQTT host/port from setup portal");
         return false;
     }
+
+    updated.mqttCustomTargetEnabled =
+        (updated.mqttBroker != DEFAULT_MQTT_BROKER) || (updated.mqttPort != DEFAULT_MQTT_PORT);
 
     runtimeConfig = updated;
     saveRuntimeConfig(runtimeConfig);
@@ -807,7 +805,8 @@ void publishHeartbeatIfDue() {
 void enterScanningMode() {
     mode = MODE_SCANNING;
     feedback.clear();
-    scanArmed = false;
+    scanArmed = true;
+    scanWindowUntilMs = 0;
     while (RFID.available()) RFID.read();
     dbgf("Mode -> %s", modeName(mode));
 }
@@ -841,11 +840,19 @@ bool tryReadTag(char outTag[11]) {
 // ---------------- Setup / loop ----------------
 
 void boardSelfTestPulse() {
-    writeLeds(true, true, true);
+    writeLeds(true, false, false);
+    delay(120);
+    writeLeds(false, true, false);
+    delay(120);
+    writeLeds(false, false, true);
+    delay(120);
+    writeLeds(false, false, false);
     writeBuzzer(true);
+    delay(90);
+    writeBuzzer(false);
     writeMotor(HAPTIC_PWM);
-    delay(150);
-    allOutputsOff();
+    delay(120);
+    writeMotor(0);
     delay(80);
 }
 
@@ -855,13 +862,14 @@ void setup() {
     Serial.println();
     Serial.println("=== scanner booting ===");
 
-    pinMode(PIN_BTN1, INPUT);
     pinMode(PIN_SWITCH, INPUT);
     pinMode(PIN_BUZZER, OUTPUT);
     pinMode(PIN_MOTOR, OUTPUT);
     pinMode(PIN_LED1, OUTPUT);
     pinMode(PIN_LED2, OUTPUT);
     pinMode(PIN_LED3, OUTPUT);
+    ledcSetup(MOTOR_PWM_CHANNEL, MOTOR_PWM_FREQ, MOTOR_PWM_BITS);
+    ledcAttachPin(PIN_MOTOR, MOTOR_PWM_CHANNEL);
     allOutputsOff();
     boardSelfTestPulse();
 
@@ -875,7 +883,12 @@ void setup() {
         runtimeConfig.mqttPort = DEFAULT_MQTT_PORT;
         runtimeConfig.mqttUsername = DEFAULT_MQTT_USERNAME;
         runtimeConfig.mqttPassword = DEFAULT_MQTT_PASSWORD;
+        runtimeConfig.mqttCustomTargetEnabled = false;
     }
+
+    dbgf("MQTT target source=%s (%s:%u)",
+         runtimeConfig.mqttCustomTargetEnabled ? "custom" : "default",
+         runtimeConfig.mqttBroker.c_str(), runtimeConfig.mqttPort);
 
     mode = MODE_CONNECTING;
     feedback.trigger(EVT_WIFI_CONNECTING_ANIM);
@@ -945,32 +958,22 @@ void ensureConnections() {
 }
 
 void loopScanning() {
-    if (consumeButtonPress() && !scanArmed) {
-        while (RFID.available()) RFID.read();
+    if (!scanArmed) {
         scanArmed = true;
-        scanWindowUntilMs = millis() + SCAN_WINDOW_MS;
-        feedback.trigger(EVT_SCAN_ARMED);
-        Serial.println("Scan armed by button press");
+        scanWindowUntilMs = 0;
+        while (RFID.available()) RFID.read();
     }
-
-    if (!scanArmed) return;
 
     char tag[11];
-    if (tryReadTag(tag)) {
-        scanArmed = false;
-        feedback.clear();
-        dbgf("Tag: %s", tag);
-        bool ok = publishScan(tag);
-        feedback.trigger(ok ? EVT_SCAN_SUCCESS : EVT_SCAN_TIMEOUT_FAIL);
-        return;
-    }
+    if (!tryReadTag(tag)) return;
 
-    if ((long)(millis() - scanWindowUntilMs) >= 0) {
-        scanArmed = false;
-        feedback.clear();
-        Serial.println("Scan window timeout");
-        feedback.trigger(EVT_SCAN_TIMEOUT_FAIL);
-    }
+    if ((long)(millis() - scanWindowUntilMs) < 0) return;
+
+    scanWindowUntilMs = millis() + SCAN_WINDOW_MS;
+    feedback.clear();
+    dbgf("Tag: %s", tag);
+    bool ok = publishScan(tag);
+    feedback.trigger(ok ? EVT_SCAN_SUCCESS : EVT_SCAN_TIMEOUT_FAIL);
 }
 
 void loop() {
