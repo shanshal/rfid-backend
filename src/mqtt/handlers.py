@@ -132,6 +132,7 @@ def handle_scan(
             instrument_id = instrument.id
             from_room_id = instrument.current_room
             to_room_id = device.room_id
+            db.commit()
             return
 
         previous_room_id = instrument.current_room
